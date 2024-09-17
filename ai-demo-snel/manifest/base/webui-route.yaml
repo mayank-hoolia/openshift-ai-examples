@@ -1,0 +1,28 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: open-webui
+  namespace: ai-demo
+spec:
+  host: open-webui.apps.c01.eu-west-03.openshift.eu
+  to:
+    kind: Service
+    name: open-webui-service
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+status:
+  ingress:
+    - host: open-webui.apps.c01.eu-west-03.openshift.eu
+      routerName: default
+      conditions:
+        - type: Admitted
+          status: 'True'
+          lastTransitionTime: '2024-09-17T21:24:28Z'
+      wildcardPolicy: None
+      routerCanonicalHostname: router-default.apps.c01.eu-west-03.openshift.eu
+

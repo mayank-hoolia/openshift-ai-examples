@@ -1,0 +1,181 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  annotations:
+    description: Ollama and openwebui combined to provide best user experiance to server any ollama supported LLM on platform
+    internal.config.kubernetes.io/previousKinds: Template
+    internal.config.kubernetes.io/previousNames: ollama-openwebui-template
+    internal.config.kubernetes.io/previousNamespaces: opendatahub
+    openshift.io/provider-display-name: "ai-demo bv."
+    tags: ollama,openwebui
+    template.openshift.io/long-description: This template defines resources needed
+      to deploy ollama for llm serving and open webui for UI application to interact with serverd model
+  labels:
+    app: open-webui
+  name: ollama-openwebui-template
+  namespace: ai-demo
+parameters:
+  - name: Project_Name
+    description: "Name of the Project you want to create and deploy your LLM Model in"
+    value: ai-demo
+    required: true
+  - name: Model_Name
+    description: "Name of the LLM Model to Load"
+    value: mistral
+    required: true
+  # - name: Model_Size
+  #   description: "how many billion parameter you have in your model ex: 7B,then type 7 image to deploy"
+  #   required: true
+  #   value: "7"
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ollama-service
+    annotations:
+      "template.alpha.openshift.io/wait-for-ready": "true"
+  spec:
+    selector:
+      app: ollama
+    ports:
+    - protocol: TCP
+      port: 11434
+      targetPort: 11434
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    name: ollama
+    annotations:
+      "template.alpha.openshift.io/wait-for-ready": "true"
+  spec:
+    serviceName: "ollama"
+    replicas: 1
+    selector:
+      matchLabels:
+        app: ollama
+    template:
+      metadata:
+        labels:
+          app: ollama
+      spec:
+        containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+          - containerPort: 11434
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "2Gi"
+            limits:
+              cpu: "4000m"
+              memory: "16Gi"
+              nvidia.com/gpu: "0"
+          volumeMounts:
+          - name: ollama-volume
+            mountPath: /root/.ollama
+          tty: true
+    volumeClaimTemplates:
+    - metadata:
+        name: ollama-volume
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 30Gi
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: open-webui-deployment
+    annotations:
+      "template.alpha.openshift.io/wait-for-ready": "true"
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: open-webui
+    template:
+      metadata:
+        labels:
+          app: open-webui
+      spec:
+        containers:
+        - name: open-webui
+          image: ghcr.io/open-webui/open-webui:main
+          ports:
+          - containerPort: 8080
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "500Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          env:
+          - name: OLLAMA_BASE_URL
+            value: "http://ollama-service.${Project_Name}.svc.cluster.local:11434"
+          tty: true
+          volumeMounts:
+          - name: webui-volume
+            mountPath: /app/backend/data
+        volumes:
+        - name: webui-volume
+          persistentVolumeClaim:
+            claimName: open-webui-pvc          
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      app: open-webui
+    name: open-webui-pvc
+    annotations:
+      "template.alpha.openshift.io/wait-for-ready": "true"
+  spec:
+    accessModes: ["ReadWriteOnce"]
+    resources:
+      requests:
+        storage: 2Gi
+- kind: Route
+  apiVersion: route.openshift.io/v1
+  metadata:
+    name: open-webui
+    annotations:
+      "template.alpha.openshift.io/wait-for-ready": "true"
+  spec:
+    host: open-webui.apps.c01.eu-west-03.openshift.eu
+    to:
+      kind: Service
+      name: open-webui-service
+      weight: 100
+    port:
+      targetPort: 8080
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+    wildcardPolicy: None
+  status:
+    ingress:
+      - host: open-webui.apps.c01.eu-west-03.openshift.eu
+        routerName: default
+        conditions:
+          - type: Admitted
+            status: 'True'
+            lastTransitionTime: '2024-09-17T21:24:28Z'
+        wildcardPolicy: None
+        routerCanonicalHostname: router-default.apps.c01.eu-west-03.openshift.eu
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: open-webui-service
+    annotations:
+      "template.alpha.openshift.io/wait-for-ready": "true"
+  spec:
+    type: ClusterIP  # Use LoadBalancer if you're on a cloud that supports it
+    selector:
+      app: open-webui
+    ports:
+      - protocol: TCP
+        port: 8080
+        targetPort: 8080
+        # If using NodePort, you can optionally specify the nodePort:
+        # nodePort: 30000
